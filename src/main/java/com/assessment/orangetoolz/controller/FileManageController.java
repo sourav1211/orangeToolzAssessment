@@ -1,28 +1,16 @@
 package com.assessment.orangetoolz.controller;
 
-import com.assessment.orangetoolz.dto.CustomerInfoDto;
 import com.assessment.orangetoolz.dto.Response;
 import com.assessment.orangetoolz.services.CustomerInfoServices;
 import com.assessment.orangetoolz.services.FileManagementServices;
-import com.assessment.orangetoolz.web.FileUploadServlet;
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.AutoConfigureOrder;
-import org.springframework.http.MediaType;
-import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestMethod;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import java.io.BufferedReader;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
 import java.io.IOException;
+import java.net.URISyntaxException;
 
 @RestController
 @AllArgsConstructor
@@ -47,8 +35,13 @@ public class FileManageController {
 //        return null;
 //    }
 
+
     @RequestMapping("/read-file")
-    public Response readFromFileAndSave() throws IOException {
+    public Response readFromFileAndSave() throws IOException, URISyntaxException {
         return fileManagementServices.saveDataFromFile();
+    }
+    @RequestMapping("/read-file-mt")
+    public Response readFromFileAndSaveWithMultithreading () throws IOException {
+        return fileManagementServices.saveDataFromFileWithMultithreadingNew();
     }
 }

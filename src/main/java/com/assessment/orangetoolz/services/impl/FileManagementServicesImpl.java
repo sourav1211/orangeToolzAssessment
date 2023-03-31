@@ -8,6 +8,7 @@ import com.assessment.orangetoolz.model.ValidCustomerInfo;
 import com.assessment.orangetoolz.repository.InvalidCustomerInfoRepository;
 import com.assessment.orangetoolz.repository.ValidCustomerInfoRepository;
 import com.assessment.orangetoolz.services.FileManagementServices;
+import com.assessment.orangetoolz.thread.Multithreading;
 import com.assessment.orangetoolz.utils.ResponseBuilder;
 import com.assessment.orangetoolz.utils.Utils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,13 +16,17 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.beans.Transient;
-import java.io.BufferedReader;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
+import java.io.*;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 
 @Service
 public class FileManagementServicesImpl implements FileManagementServices {
@@ -35,50 +40,115 @@ public class FileManagementServicesImpl implements FileManagementServices {
         this.validCustomerInfoRepository = validCustomerInfoRepository;
         this.invalidCustomerInfoRepository = invalidCustomerInfoRepository;
     }
-
+    @Override
+    public Boolean callToSateData(String stringLine) {
+        saveDateFromFileFromStringLIne(stringLine);
+        return true;
+    }
 
     @Override
-    public Response saveDataFromFile() throws IOException {
+    public Response saveDataFromFileWithMultithreadingNew() {
+        try {
+//            System.out.println("start calling");
+            Integer loopCount = Multithreading.getFileLineCount();
+//            Integer divisionNumber = 10;
+            Integer divisionNumber = 10000;
+            double numberOfThreads=Math.ceil(loopCount / divisionNumber);
+            CountDownLatch latch = new CountDownLatch((int) numberOfThreads+1);
+            Integer startNumber = 0;
+            Integer endNumber = 0;
+            for (int i = 0; i < numberOfThreads + 1; i++) {
+                if (i == 0) {
+                    startNumber = 0;
+                    endNumber = divisionNumber - 1;
+                } else {
+                    startNumber = startNumber + divisionNumber;
+                    endNumber = (endNumber + divisionNumber);
+                }
+                Multithreading multithreading = new Multithreading(i, startNumber, endNumber, this,latch,validCustomerInfoRepository,invalidCustomerInfoRepository);
+                Thread callToSave = new Thread(multithreading);
+                callToSave.start();
+                callToSave.join();
+                callToSave.stop();
+            }
+            latch.await();
+//            System.out.println("Finally call");
+            writeValidCustomersOnFile();
+            writeInvalidCustomersOnFile();
+//            System.out.println("End calling");
+
+        }catch (Exception e){return ResponseBuilder.getFailResponse(HttpStatus.INTERNAL_SERVER_ERROR, "File read successfully");}
+        System.out.println("End Process");
+        return ResponseBuilder.getSuccessResponse(HttpStatus.OK, null, "File read successfully");
+    }
+    @Override
+    public Response saveDataFromFileTest() {
+        List<String> lines = Collections.emptyList();
+        try {
+            lines = Files.readAllLines(Paths.get("F:\\1M-customers - Copy.txt"), StandardCharsets.UTF_8);
+//            lines = Files.readAllLines(Paths.get("F:\\1M-customers - Copy.txt"), StandardCharsets.UTF_8);
+            System.out.println("get");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    @Override
+    public Response saveDataFromFile() throws IOException, URISyntaxException {
+//        URL res = getClass().getClassLoader().getResource("1M-customers - Copy.txt");
+//        File file = Paths.get(res.toURI()).toFile();
+//        String absolutePath = file.getAbsolutePath();
+
+        BufferedReader br = new BufferedReader(new FileReader(Utils.getAbsolutePathFromResource("1M-customers - Copy.txt")));
 //        BufferedReader br = new BufferedReader(new FileReader("F:\\1M-customers - Copy.txt"));
-        BufferedReader br = new BufferedReader(new FileReader("F:\\1M-customers.txt"));
+//        BufferedReader br = new BufferedReader(new FileReader("F:\\1M-customers.txt"));
         try {
             String line = br.readLine();
             System.out.println("start");
             while (line != null) {
-                CustomerInfoDto dto = stringSeparatedBySymbol(line, ",");
-                Integer checkCustomerValidity = checkCustomerValidity(dto);
-                if (checkCustomerValidity == 0) {
-                    Long countDuplicate = validCustomerInfoRepository.countByMobileNumberAndEmailAddressAndIsActiveTrue(dto.getMobileNumber(), dto.getEmailAddress());
-                    if (countDuplicate > 0) {
-                        dto.setReasonOfInvalid(ReasonOfInvalid.DUPLICATE.name());
-                        saveInvalidCustomers(dto);
-                    } else {
-                        saveValidCustomers(dto);
-                    }
-                } else {
-                    if (checkCustomerValidity == 1) {
-                        dto.setReasonOfInvalid(ReasonOfInvalid.MOBILE_NUMBER.name());
-                        saveInvalidCustomers(dto);
-                    }
-                    if (checkCustomerValidity == 2) {
-                        dto.setReasonOfInvalid(ReasonOfInvalid.EMAIL_ADDRESS.name());
-                        saveInvalidCustomers(dto);
-                    }
-
-                }
-
+                saveDateFromFileFromStringLIne(line);
                 line = br.readLine();
             }
+            return ResponseBuilder.getSuccessResponse(HttpStatus.OK, null, "File read successfully");
         } finally {
             br.close();
             writeValidCustomersOnFile();
             writeInvalidCustomersOnFile();
+
         }
-        return ResponseBuilder.getSuccessResponse(HttpStatus.OK,null,"File read successfully, data store on db successfully and export data on file successfully");
+//        return ResponseBuilder.getFailResponse(HttpStatus.INTERNAL_SERVER_ERROR,"Internal Server Error");
+    }
+
+    @Override
+    public void saveDateFromFileFromStringLIne(String singleLine) {
+        CustomerInfoDto dto = stringSeparatedBySymbol(singleLine, ",");
+        Integer checkCustomerValidity = checkCustomerValidity(dto);
+        if (checkCustomerValidity == 0) {
+            Long countDuplicate = validCustomerInfoRepository.countByMobileNumberAndEmailAddressAndIsActiveTrue(dto.getMobileNumber(), dto.getEmailAddress());
+            if (countDuplicate > 0) {
+                dto.setReasonOfInvalid(ReasonOfInvalid.DUPLICATE.name());
+                saveInvalidCustomers(dto);
+            } else {
+                saveValidCustomers(dto);
+            }
+        } else {
+            if (checkCustomerValidity == 1) {
+                dto.setReasonOfInvalid(ReasonOfInvalid.MOBILE_NUMBER.name());
+                saveInvalidCustomers(dto);
+            }
+            if (checkCustomerValidity == 2) {
+                dto.setReasonOfInvalid(ReasonOfInvalid.EMAIL_ADDRESS.name());
+                saveInvalidCustomers(dto);
+            }
+
+        }
+//        return ResponseBuilder.getSuccessResponse(HttpStatus.OK,null,"File read successfully");
 
     }
 
-    private void saveInvalidCustomers(CustomerInfoDto dto) {
+
+    synchronized private void saveInvalidCustomers(CustomerInfoDto dto) {
         InvalidCustomerInfo invalidCustomerInfo = new InvalidCustomerInfo();
         invalidCustomerInfo.setFirstName(dto.getFirstName());
         invalidCustomerInfo.setLastName(dto.getLastName());
@@ -92,7 +162,7 @@ public class FileManagementServicesImpl implements FileManagementServices {
         invalidCustomerInfoRepository.save(invalidCustomerInfo);
     }
 
-    private void saveValidCustomers(CustomerInfoDto dto) {
+    synchronized private void saveValidCustomers(CustomerInfoDto dto) {
         ValidCustomerInfo validInfo = new ValidCustomerInfo();
         validInfo.setFirstName(dto.getFirstName());
         validInfo.setLastName(dto.getLastName());
@@ -105,7 +175,7 @@ public class FileManagementServicesImpl implements FileManagementServices {
         validCustomerInfoRepository.save(validInfo);
     }
 
-
+@Override
     public Integer checkCustomerValidity(CustomerInfoDto dto) {
 
         /*
@@ -129,7 +199,7 @@ public class FileManagementServicesImpl implements FileManagementServices {
         }
         return null;
     }
-
+    @Override
     public CustomerInfoDto stringSeparatedBySymbol(String line, String separatorElement) {
 //        List<String> lineElementList = Arrays.asList(line.split(separatorElement));
         String[] lineElementList = line.split(separatorElement);
@@ -141,9 +211,9 @@ public class FileManagementServicesImpl implements FileManagementServices {
         dto.setZipCode(lineElementList[4]);
         dto.setMobileNumber(lineElementList[5]);
         dto.setEmailAddress(lineElementList[6]);
-        try{
+        try {
             dto.setIpAddress(lineElementList[7]);
-        }catch (ArrayIndexOutOfBoundsException e){
+        } catch (ArrayIndexOutOfBoundsException e) {
             dto.setIpAddress("Not found");
             e.printStackTrace();
         }
@@ -198,12 +268,12 @@ public class FileManagementServicesImpl implements FileManagementServices {
             counter = counter + 1;
             count100k = count100k + 1;
             if (count100k == 100000) {
-                fileCounter=fileCounter+1;
+                fileCounter = fileCounter + 1;
                 customersLines.append(System.lineSeparator());
                 customersLines.append(System.lineSeparator());
                 customersLines.append("[ Total valid customers in this file: " + count100k + " ]");
-                count100k=0;
-                writeToFile(customersLines,"valid",fileCounter);
+                count100k = 0;
+                writeToFile(customersLines, "valid", fileCounter);
                 customersLines = new StringBuilder();
             }
             if (infoList.size() == counter) {
@@ -211,12 +281,12 @@ public class FileManagementServicesImpl implements FileManagementServices {
                 customersLines.append(System.lineSeparator());
                 customersLines.append("[ This is last file. ]");
                 customersLines.append(System.lineSeparator());
-                customersLines.append("[ Total file (including this file): " + (fileCounter+1) + " ]");
+                customersLines.append("[ Total file (including this file): " + (fileCounter + 1) + " ]");
                 customersLines.append(System.lineSeparator());
                 customersLines.append("[ Total valid Customers in this file: " + count100k + " ]");
             }
         }
-        writeToFile(customersLines,"valid",fileCounter+1);
+        writeToFile(customersLines, "valid", fileCounter + 1);
     }
 
     private void writeInvalidCustomersOnFile() {
@@ -235,7 +305,7 @@ public class FileManagementServicesImpl implements FileManagementServices {
                 customersLines.append("[ Total Invalid Customers: " + counter + " ]");
             }
         }
-        writeToFile(customersLines,"invalid",0);
+        writeToFile(customersLines, "invalid", 0);
 //        try {
 //            FileWriter myWriter = new FileWriter("F:\\output\\invalid_customer_list.txt");
 //            myWriter.write(customersLines.toString());
@@ -294,18 +364,19 @@ public class FileManagementServicesImpl implements FileManagementServices {
         customer.append("Email Address: " + dto.getEmailAddress());
         customer.append(", ");
         customer.append("IP Address: " + dto.getIpAddress());
-        if(dto.getReasonOfInvalid()!=null) {
+        if (dto.getReasonOfInvalid() != null) {
             customer.append(", ");
             customer.append("Reason of Invalid: " + dto.getReasonOfInvalid());
         }
         return customer;
     }
-    private void writeToFile(StringBuilder customer,String customerType,Integer fileCounter){
-        String fileExtension=".txt";
-        String fileDir="F:\\output\\";
-        String fileName=(customerType=="valid"?"valid_customer_list_"+fileCounter:"invalid_customer_list");
+
+    private void writeToFile(StringBuilder customer, String customerType, Integer fileCounter) {
+        String fileExtension = ".txt";
+        String fileDir = "F:\\output\\";
+        String fileName = (customerType == "valid" ? "valid_customer_list_" + fileCounter : "invalid_customer_list");
         try {
-            FileWriter myWriter = new FileWriter(fileDir+fileName+fileExtension);
+            FileWriter myWriter = new FileWriter(fileDir + fileName + fileExtension);
             myWriter.write(customer.toString());
             myWriter.close();
 //            System.out.println("Successfully wrote "+fileName+" file");
